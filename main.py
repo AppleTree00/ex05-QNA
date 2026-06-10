@@ -5,7 +5,6 @@ import streamlit as st
 from dotenv import load_dotenv
 load_dotenv()
 
-# 👉 변경점 1: TextLoader, Docx2txtLoader 추가 임포트
 from langchain_community.document_loaders import PyPDFLoader, TextLoader, Docx2txtLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
@@ -15,9 +14,31 @@ from langchain_classic.chains import create_retrieval_chain
 from langchain_classic.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import ChatPromptTemplate
 
+# 👉 변경점 1: Primary 버튼을 연한 파란색으로 변경하는 커스텀 CSS 주입
+st.markdown("""
+<style>
+    /* Primary 버튼 색상 커스텀 (연한 파란색) */
+    div.stButton > button[kind="primary"] {
+        background-color: #ADD8E6 !important; 
+        color: #1E1E1E !important; 
+        border-color: #ADD8E6 !important;
+        font-weight: bold !important;
+    }
+    div.stButton > button[kind="primary"]:hover {
+        background-color: #87CEFA !important;
+        border-color: #87CEFA !important;
+        color: black !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 # 1. 세션 상태 초기화
 if "rag_chain" not in st.session_state:
     st.session_state.rag_chain = None
+
+# 👉 변경점 2: 학습된 문서의 종류(확장자)를 저장할 세션 상태 추가
+if "uploaded_file_types" not in st.session_state:
+    st.session_state.uploaded_file_types = set()
 
 # 2. 사이드바 - 설정 및 드래그 앤 드롭 업로드 영역
 with st.sidebar:
@@ -30,7 +51,6 @@ with st.sidebar:
         index=0 # 기본값 50
     )
     
-    # 👉 변경점 2: type 파라미터에 "txt", "docx", "doc" 추가
     uploaded_files = st.file_uploader(
         "📁 아래 점선 영역에 '폴더'를 통째로 드래그 앤 드롭하세요!", 
         type=["pdf", "txt", "docx", "doc"], 
@@ -44,9 +64,9 @@ with st.sidebar:
             
             with st.spinner(f"총 {len(files_to_process)}개의 문서를 분석하고 있습니다..."):
                 all_pages = []
+                current_file_types = set() # 현재 업로드된 파일 종류 수집용
                 
                 for uploaded_file in files_to_process:
-                    # 👉 변경점 3: 파일 확장자 추출
                     file_extension = os.path.splitext(uploaded_file.name)[1].lower()
                     
                     # 확장자에 맞춰 임시 파일 생성
@@ -55,7 +75,6 @@ with st.sidebar:
                         tmp_file_path = tmp_file.name
                     
                     try:
-                        # 👉 변경점 4: 확장자에 따른 로더 분기 처리
                         if file_extension == ".pdf":
                             loader = PyPDFLoader(tmp_file_path)
                         elif file_extension == ".txt":
@@ -68,6 +87,9 @@ with st.sidebar:
                             
                         pages = loader.load_and_split()
                         all_pages.extend(pages)
+                        
+                        # 성공적으로 로드된 파일의 확장자를 세트에 추가
+                        current_file_types.add(file_extension.replace(".", "").upper())
                         
                     except Exception as e:
                         st.error(f"{uploaded_file.name} 처리 중 오류가 발생했습니다: {str(e)}")
@@ -117,6 +139,7 @@ with st.sidebar:
                 rag_chain = create_retrieval_chain(retriever_from_llm, question_answer_chain)
                 
                 st.session_state.rag_chain = rag_chain
+                st.session_state.uploaded_file_types = current_file_types # 상태 업데이트
                 
             st.success(f"선택하신 {len(files_to_process)}개의 문서 학습이 완료되었습니다!")
         else:
@@ -138,5 +161,24 @@ if st.session_state.rag_chain is not None:
                 st.write(response['answer'])
         else:
             st.warning("질문을 먼저 입력해주세요.")
+            
+    # 👉 변경점 3: 우측 하단에 학습된 문서 종류를 보기 좋게 표시
+    if st.session_state.uploaded_file_types:
+        st.write("") # 간격 띄우기
+        st.write("")
+        
+        # HTML을 사용하여 우측 정렬된 배지(Badge) 형태로 렌더링
+        badges_html = "".join([
+            f"<span style='background-color:#E1F5FE; color:#0288D1; padding:4px 10px; border-radius:12px; margin-left:6px; font-size:14px; font-weight:bold;'>{ext}</span>" 
+            for ext in sorted(st.session_state.uploaded_file_types)
+        ])
+        
+        st.markdown(
+            f"<div style='text-align: right; border-top: 1px solid #E0E0E0; padding-top: 15px; margin-top: 40px;'>"
+            f"<span style='color: #666; font-size: 14px;'>학습된 문서 종류:</span> {badges_html}"
+            f"</div>", 
+            unsafe_allow_html=True
+        )
+
 else:
     st.info("👈 먼저 왼쪽 사이드바 점선 영역에 파일이 담긴 폴더를 드래그 앤 드롭하고 '문서 학습 시작' 버튼을 눌러주세요.")
