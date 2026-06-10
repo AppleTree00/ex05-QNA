@@ -6,3 +6,4 @@ langchain_classic
 langchain_core
 pypdf
 python-dotenv
+docx2txt
